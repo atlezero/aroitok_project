@@ -44,39 +44,22 @@ export async function POST(req: NextRequest) {
 
 async function handleEvent(event: WebhookEvent) {
     if (event.type !== 'message' || event.message.type !== 'text') {
-        return Promise.resolve(null);
-    }
-
-    const userMessage = event.message.text;
-
-    try {
-        // Call Gemini API
-        const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-        const result = await model.generateContent(userMessage);
-        const response = result.response;
-        const text = response.text();
-
-        // Reply to LINE
-        await client.replyMessage({
-            replyToken: event.replyToken,
-            messages: [
-                {
-                    type: 'text',
-                    text: text,
+        type: 'text',
+            text: text,
                 },
             ],
-        });
+});
     } catch (error) {
-        console.error('Error calling Gemini or replying to LINE:', error);
-        // Optional: Reply with an error message to the user
-        await client.replyMessage({
-            replyToken: event.replyToken,
-            messages: [
-                {
-                    type: 'text',
-                    text: 'ขออภัย เกิดข้อผิดพลาดในการประมวลผล',
-                },
-            ],
-        });
-    }
+    console.error('Error calling Gemini or replying to LINE:', error);
+    // Optional: Reply with an error message to the user
+    await client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+            {
+                type: 'text',
+                text: 'ขออภัย เกิดข้อผิดพลาดในการประมวลผล',
+            },
+        ],
+    });
+}
 }
