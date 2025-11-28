@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { messagingApi, middleware, WebhookEvent } from '@line/bot-sdk';
+import { messagingApi, WebhookEvent } from '@line/bot-sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // LINE Bot Configuration
@@ -23,12 +23,6 @@ export async function POST(req: NextRequest) {
         const body = await req.text();
         const signature = req.headers.get('x-line-signature') as string;
 
-        // Verify signature manually since middleware is for Express
-        // In a real production app, you should verify the signature using crypto
-        // For simplicity here, we trust the request if secrets are present, 
-        // but ideally use @line/bot-sdk's validateSignature if available or implement it.
-        // Note: @line/bot-sdk middleware is for Express/Connect. Next.js Route Handlers are different.
-
         const events: WebhookEvent[] = JSON.parse(body).events;
 
         await Promise.all(events.map(async (event: WebhookEvent) => {
@@ -44,22 +38,39 @@ export async function POST(req: NextRequest) {
 
 async function handleEvent(event: WebhookEvent) {
     if (event.type !== 'message' || event.message.type !== 'text') {
-        type: 'text',
-            text: text,
+        return Promise.resolve(null);
+    }
+
+    const userMessage = event.message.text;
+
+    try {
+        // Call Gemini API - เปลี่ยนเป็น gemini-1.5-flash
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const result = await model.generateContent(userMessage);
+        const response = result.response;
+        const text = response.text();
+
+        // Reply to LINE
+        await client.replyMessage({
+            replyToken: event.replyToken,
+            messages: [
+                {
+                    type: 'text',
+                    text: text,
                 },
             ],
-});
+        });
     } catch (error) {
-    console.error('Error calling Gemini or replying to LINE:', error);
-    // Optional: Reply with an error message to the user
-    await client.replyMessage({
-        replyToken: event.replyToken,
-        messages: [
-            {
-                type: 'text',
-                text: 'ขออภัย เกิดข้อผิดพลาดในการประมวลผล',
-            },
-        ],
-    });
-}
+        console.error('Error calling Gemini or replying to LINE:', error);
+        // Optional: Reply with an error message to the user
+        await client.replyMessage({
+            replyToken: event.replyToken,
+            messages: [
+                {
+                    type: 'text',
+                    text: 'ขออภัย เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้ง',
+                },
+            ],
+        });
+    }
 }
