@@ -44,8 +44,8 @@ async function handleEvent(event: WebhookEvent) {
     const userMessage = event.message.text;
 
     try {
-        // Call Gemini API - เปลี่ยนเป็น gemini-1.5-flash
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        // Call Gemini API - ใช้ gemini-1.5-pro-latest
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro-latest' });
         const result = await model.generateContent(userMessage);
         const response = result.response;
         const text = response.text();
