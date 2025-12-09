@@ -1,19 +1,26 @@
+// ====================================================================
+// LINE BOT + GOOGLE GEMINI (TEXT = 2.5-FLASH, IMAGE = 2.0-FLASH-EXP)
+// ====================================================================
+
 import { NextRequest, NextResponse } from "next/server";
 import { messagingApi, WebhookEvent, MessageEvent } from "@line/bot-sdk";
 import { GoogleGenAI } from "@google/genai";
 
-// ===== LINE BOT CONFIG =====
+// ====================================================================
+// ENV
+// ====================================================================
 const client = new messagingApi.MessagingApiClient({
   channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN!,
 });
-
 const channelSecret = process.env.CHANNEL_SECRET!;
 const geminiApiKey = process.env.GEMINI_API_KEY!;
 
-// ===== GOOGLE GEN AI CLIENT =====
+// Google AI Client
 const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
-// ===== SYSTEM PROMPT =====
+// ====================================================================
+// SYSTEM PROMPT
+// ====================================================================
 const SYSTEM_PROMPT = `
 คุณคือผู้ช่วยด้านอาหารและสุขภาพ มีหน้าที่ตอบคำถามเกี่ยวกับ:
 - อาหารและโภชนาการ
@@ -26,9 +33,11 @@ const SYSTEM_PROMPT = `
 "ขอโทษค่ะ ฉันตอบได้เฉพาะเรื่องอาหาร สุขภาพ โภชนาการ และการกินนะคะ 🍎"
 `;
 
-// ===== RATE LIMIT MAP =====
-const userLastMessage = new Map<string, number>();
-const SPAM_THRESHOLD_MS = 3000;
+// ====================================================================
+// SPAM PROTECTION
+// ====================================================================
+const userLastMsg = new Map<string, number>();
+const SPAM_MS = 3000;
 
 // ====================================================================
 // MAIN WEBHOOK
@@ -36,11 +45,14 @@ const SPAM_THRESHOLD_MS = 3000;
 export async function POST(req: NextRequest) {
   try {
     if (!channelSecret || !geminiApiKey) {
-      return NextResponse.json({ error: "Missing environment variables" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Missing ENV variables" },
+        { status: 500 }
+      );
     }
 
-    const body = await req.text();
-    const { events } = JSON.parse(body);
+    const raw = await req.text();
+    const { events } = JSON.parse(raw);
 
     if (!events) {
       return NextResponse.json({ error: "No events" }, { status: 400 });
@@ -51,7 +63,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "ok" });
   } catch (err) {
     console.error("Webhook Error:", err);
-    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
 
@@ -62,29 +74,33 @@ async function handleEvent(event: WebhookEvent) {
   if (event.type !== "message" || event.message.type !== "text") return;
 
   const userId = event.source.userId!;
-  const userMessage = event.message.text;
+  const text = event.message.text;
   const now = Date.now();
 
   // Anti-spam
-  const lastTime = userLastMessage.get(userId) || 0;
-  if (now - lastTime < SPAM_THRESHOLD_MS) {
-    await client.replyMessage({
-      replyToken: event.replyToken,
-      messages: [{ type: "text", text: "ใจเย็นๆ รอแป๊บนะเว้ย 😅" }],
-    });
+  const last = userLastMsg.get(userId) ?? 0;
+  if (now - last < SPAM_MS) {
+    await reply(event.replyToken, "รอแป๊บเด้อ 😅");
     return;
   }
-  userLastMessage.set(userId, now);
+  userLastMsg.set(userId, now);
 
-  // ถ้าเป็นคำสั่งสร้างรูป → ยิงไปฟังก์ชัน generate image
-  if (userMessage.includes("สร้างรูป") || userMessage.includes("วาดรูป")) {
-    await handleImageGeneration(event, userMessage);
+  // ถามเรื่องรูป
+  if (/สร้างรูป|วาดรูป/.test(text)) {
+    await handleImage(event, text);
     return;
   }
 
-  // ====================================================================
-  // GEMINI 2.5 FLASH — TEXT MODEL
-  // ====================================================================
+  // Otherwise → normal text generation
+  await handleText(event, text);
+}
+
+// ====================================================================
+// TEXT MODEL — Gemini 2.5 Flash
+// ====================================================================
+async function handleText(event: MessageEvent, userMessage: string) {
+  const replyToken = event.replyToken;
+
   try {
     const prompt = `${SYSTEM_PROMPT}\n\nคำถาม: ${userMessage}`;
 
@@ -93,84 +109,86 @@ async function handleEvent(event: WebhookEvent) {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
 
-    let reply = response.text ?? "ขออภัยค่ะ ระบบตอบไม่ได้ในตอนนี้";
+    const text = response.text || "ตอบไม่ได้จ้า 😭";
 
-    if (reply.length > 5000) {
-      reply = reply.substring(0, 4900) + "\n\n(ข้อความยาวเกิน ตัดบางส่วนออก)";
-    }
-
-    await client.replyMessage({
-      replyToken: event.replyToken,
-      messages: [{ type: "text", text: reply }],
-    });
+    await reply(replyToken, text.length > 5000 ? text.substring(0, 4900) + "\n\n(ตัดบางส่วน)" : text);
   } catch (err) {
     console.error("Gemini Text Error:", err);
-    await client.replyMessage({
-      replyToken: event.replyToken,
-      messages: [{ type: "text", text: "ระบบเอ๋อจ้า ลองใหม่ทีหลัง 🤣" }],
-    });
+    await reply(replyToken, "ระบบงอแง ลองใหม่ทีหลังนะ 😂");
   }
 }
 
 // ====================================================================
-// HANDLE IMAGE GENERATION (IMAGEN 3)
+// IMAGE GENERATION — Gemini 2.0 Flash EXP
 // ====================================================================
-async function handleImageGeneration(event: MessageEvent, userMessage: string) {
+async function handleImage(event: MessageEvent, userMessage: string) {
   const replyToken = event.replyToken;
-  const prompt = userMessage.replace(/สร้างรูป|วาดรูป/gi, "").trim();
   const userId = event.source.userId!;
 
+  const prompt = userMessage.replace(/สร้างรูป|วาดรูป/gi, "").trim();
   if (!prompt) {
-    await client.replyMessage({
-      replyToken,
-      messages: [{ type: "text", text: "บอกมาก่อนว่าจะให้วาดอะไร 🤨" }],
-    });
+    await reply(replyToken, "บอกก่อนสิว่าจะให้วาดอะไร 🤨");
     return;
   }
 
-  // อนุญาตแค่เรื่องอาหาร/สุขภาพ
+  // อนุญาตเฉพาะอาหาร/สุขภาพ
   const allowed = [
-    "อาหาร", "ผัก", "ผลไม้", "เมนู", "สลัด", "อาหารคลีน", "โปรตีน",
-    "ไข่", "ปลา", "อาหารสุขภาพ", "nutrition", "food", "healthy", "meal",
+    "อาหาร",
+    "ผัก",
+    "ผลไม้",
+    "เมนู",
+    "สลัด",
+    "อาหารคลีน",
+    "โภชนาการ",
+    "food",
+    "healthy",
+    "meal",
   ];
 
-  if (!allowed.some(k => prompt.includes(k))) {
-    await client.replyMessage({
-      replyToken,
-      messages: [{
-        type: "text",
-        text: "ขอเฉพาะรูปที่เกี่ยวกับอาหาร/สุขภาพเท่านั้นนะ 🥗",
-      }],
-    });
+  if (!allowed.some((k) => prompt.includes(k))) {
+    await reply(replyToken, "รูปต้องเกี่ยวกับอาหารหรือสุขภาพเท่านั้นนะ 🥗");
     return;
   }
 
-  // ส่งข้อความรอ
-  await client.replyMessage({
-    replyToken,
-    messages: [{ type: "text", text: "กำลังวาดรูปให้แป๊บนะ 😎🎨" }],
-  });
+  // แจ้งกำลังวาด
+  await reply(replyToken, "กำลังวาดรูปให้อยู่นะ 😎🎨");
 
   try {
-    // ยิง Imagen 3.0 รุ่นล่าสุด
-    const res = await ai.models.generateContent({
-      model: "imagen-3.0-generate-002",
-      contents: prompt,
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash-exp",
+      contents: [{ role: "user", parts: [{ text: `Generate a food/health related image: ${prompt}` }] }],
     });
 
-    // ไม่มีระบบ upload → แจ้ง user
+    const img = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+
+    if (!img) throw new Error("Image missing");
+
+    // NOTE: LINE ต้องใช้ URL → ยังส่งรูปไม่ได้จนกว่าจะ upload ไป storage ก่อน
     await client.pushMessage({
       to: userId,
-      messages: [{
-        type: "text",
-        text: "รูปสร้างเสร็จแล้ว แต่ระบบส่งรูปตรงใน LINE ยังไม่เปิดใช้ ต้องใส่ Cloud Storage ก่อนเด้อ 🤖📦",
-      }],
+      messages: [
+        {
+          type: "text",
+          text:
+            "รูปสร้างเสร็จแล้ว 🎉\nแต่ต้องอัปโหลดไฟล์ไป storage ก่อน ถึงจะส่งใน LINE ได้เด้อ 📦",
+        },
+      ],
     });
   } catch (err) {
     console.error("Image Error:", err);
     await client.pushMessage({
       to: userId,
-      messages: [{ type: "text", text: "วาดรูปไม่ผ่านว่ะ ลองใหม่ทีหลัง 😭" }],
+      messages: [{ type: "text", text: "วาดรูปไม่ผ่าน ลองใหม่ทีหลังนะ 😭" }],
     });
   }
+}
+
+// ====================================================================
+// HELPERS
+// ====================================================================
+async function reply(replyToken: string, text: string) {
+  return client.replyMessage({
+    replyToken,
+    messages: [{ type: "text", text }],
+  });
 }
