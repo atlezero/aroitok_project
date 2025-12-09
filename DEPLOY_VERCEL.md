@@ -28,9 +28,9 @@ vercel
 
 | Name | Value |
 |------|-------|
-| `CHANNEL_ACCESS_TOKEN` | `UfukekBbYxSrZYstIOY8Jxa2YElaQImau0pwurjSQbGignl98UEXnIrrjApQh6S/VntL1+7RgNKEEvGI7R5dVGyn6zW2A9tzqfks9b3zCEDOdkfTFHtyHg0ltJSAj+OrSISPyVGIwHCeldlgbBY4RAdB04t89/1O/w1cDnyilFU=` |
-| `CHANNEL_SECRET` | `145ad5f38e7a91156750f5dd196e5ffe` |
-| `GEMINI_API_KEY` | `AIzaSyA6le5cs6Iok6MdL-krf-WpSxX6jTUTnXo` |
+| `CHANNEL_ACCESS_TOKEN` | `(ใส่ค่าจาก LINE Developers Console)` |
+| `CHANNEL_SECRET` | `(ใส่ค่าจาก LINE Developers Console)` |
+| `GEMINI_API_KEY` | `(ใส่ค่าจาก Google AI Studio)` |
 
 5. คลิก **Save**
 6. **สำคัญ:** ต้อง Redeploy โปรเจคใหม่เพื่อให้ตัวแปรมีผล (คลิก Deployments → คลิก ... → Redeploy)
