@@ -94,9 +94,9 @@ async function handleEvent(event: WebhookEvent) {
       return;
     }
 
-    // ✅ ใช้ Gemini 3.0 Pro พร้อม System Prompt
+    // ✅ ใช้ Gemini 2.0 Flash พร้อม System Prompt
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.0-flash",
       contents: [
         {
           role: "user",
