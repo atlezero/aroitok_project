@@ -83,13 +83,13 @@ async function handleEvent(event: WebhookEvent) {
   }
 
   // ====================================================================
-  // GEMINI 3 PRO — TEXT MODEL
+  // GEMINI 1.5 FLASH — TEXT MODEL
   // ====================================================================
   try {
     const prompt = `${SYSTEM_PROMPT}\n\nคำถาม: ${userMessage}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-1.5-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
 
